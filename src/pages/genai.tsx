@@ -1,12 +1,9 @@
-import React, { useState } from "react"
-import Anthropic from '@anthropic-ai/sdk';
-import './genai.css'; // import CSS file for styling
+import React, { useState } from "react";
+import { AnthropicClient } from "../app/clients/anthropic-client";
+import { AmazonKendraClient } from "../app/clients/amazon-kendra-client";
+import { Prompt } from "../app/prompts/prompt"
 
-const domain = window?.location?.origin || '';
-const anthropic = new Anthropic({
-  apiKey: '', // defaults to process.env["ANTHROPIC_API_KEY"]
-  baseURL: domain + '/anthropic/',
-});
+import './genai.css'; // import CSS file for styling
 
 export default function GenAi() {
   const [inputText, setInputText] = useState('');
@@ -20,23 +17,25 @@ export default function GenAi() {
     e.preventDefault();
     // You can process inputText here if needed
     // For now, just echoing it back as response
-    console.log('Trying to connect to Antropic');    
-    anthropic.messages.create({
-      model: "claude-3-haiku-20240307",
-      max_tokens: 512,
-      messages: [{ role: "user", content: inputText }],
-    }).then((msg) => {
-      console.log(msg);
-      if (msg.content.length > 0) {
-        setResponseText(msg.content[0].text);
-      } else {
-        setResponseText("There is no response");
-      }
-    }).catch((error) => {
-      console.log(error);
-      setResponseText(error + "");
-    });
-    //console.log(msg);
+    
+    console.log('Trying to connect to Antropic');
+    /** [R] Retrieval - Kendra Amazon Intelligent Search */
+    const kendraClient = new AmazonKendraClient();
+    const searchResponse = await kendraClient.getResponse(inputText);
+
+    console.log('searchResponse', searchResponse);
+    const context = kendraClient.buildContext(searchResponse);
+    /** Context Retrieval Done */
+    /** [A] Build Augmented Prompt using user question, context and system prompt*/
+    const prompt = new Prompt();
+    const augmentedPrompt = prompt.getAugmentedPrompt(inputText, context);
+    console.log('augmentedPrompt', augmentedPrompt);
+    /** [G] Generate Response from LLM model */
+    let llmClient = new AnthropicClient();
+    const llmResponse = await llmClient.getResponse(augmentedPrompt);
+    console.log('llmResponse', llmResponse);
+    
+    setResponseText(llmResponse.content[0].text);
     
   };
 
@@ -54,7 +53,9 @@ export default function GenAi() {
         </form>
       </div>
       <div className="right">
-        <div className="response">{responseText}</div>
+        <div className="response">
+          <div dangerouslySetInnerHTML={{ __html: responseText }} />          
+        </div>
       </div>
     </div>
   )
